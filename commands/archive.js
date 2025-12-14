@@ -27,7 +27,7 @@ export default async function archive({ config }) {
   }
 
   const args = process.argv.slice(2)
-  const skipConfirm = true // args.indexOf('-y') >= 0
+  const skipConfirm = args.indexOf('--confirm') === -1
 
   const { rootDir } = config
   const {
@@ -35,7 +35,7 @@ export default async function archive({ config }) {
     dest,
     exclude = [],
     rootFolder: archiveRootFolder = config.archive.root, // Alias
-    configs = [],
+    configs = []
   } = config.archive
 
   if (!src || !dest) {
@@ -47,7 +47,7 @@ export default async function archive({ config }) {
     const childConfigPath = path.join(rootDir, childConfig)
     const relativeChildRootPath = path.relative(
       rootDir,
-      path.dirname(childConfigPath),
+      path.dirname(childConfigPath)
     )
 
     /**
@@ -68,28 +68,51 @@ export default async function archive({ config }) {
 
     src.push(...(configJson?.archive?.src ?? []).map(relativeToChildFolder))
     exclude.push(
-      ...(configJson?.archive?.exclude ?? []).map(relativeToChildFolder),
+      ...(configJson?.archive?.exclude ?? []).map(relativeToChildFolder)
     )
   }
 
-  const files = await glob(src, {
+  /**
+   * Process .gitignore patterns to glob ignore option
+   */
+  function processGitIgnorePatterns(patterns) {
+    return patterns.map((p) => {
+      // Starting slash means relative to current directory, same as in .gitignore
+      p = p.replace(/^\//, './')
+      return p.startsWith('./')
+        ? // Ignore file or directory and its contents
+          `{${p}, ${p}/**}`
+        : // Ignore pattern in subdirectories by default, unless explicitly using / or ./
+          !p.startsWith('**')
+          ? `**/${p}`
+          : p
+    })
+  }
+
+  const globOptions = {
     cwd: rootDir,
-    ignore: [
+    ignore: processGitIgnorePatterns([
       ...exclude,
-      'artifacts',
+      '/artifacts',
       'bun.lockb',
+      'bun.lock',
       'composer.lock',
       '.git*',
       '.idea',
       'node_modules',
       'package-lock.json',
       '.phpunit.cache',
-      'publish',
+      '/publish',
       '.wp-env.json',
       '.wp-env.override.json',
-      'yarn.lock',
-    ].map((f) => (!f.startsWith('/') && !f.startsWith('./') ? '**/' + f : f)),
-  })
+      'yarn.lock'
+    ])
+  }
+
+  const files = await glob(src, globOptions)
+
+  console.log('Glob options:')
+  console.log(globOptions)
 
   console.log('Files to archive:')
   console.log(files.join('\n'))
@@ -122,7 +145,7 @@ export default async function archive({ config }) {
   const archivePath = path.join(rootDir, dest)
 
   await fs.mkdir(path.dirname(archivePath), {
-    recursive: true, // Ensure parent directories, and no error when dir exists
+    recursive: true // Ensure parent directories, and no error when dir exists
   })
 
   if (await fileExists(archivePath)) {
